@@ -12,7 +12,7 @@ The first version targets these multiline layouts:
 - indentation for method parameter lists that start on the next line after `(`
 - block-body parenthesized lambdas used as invocation arguments
 
-It preserves the input file newline style and skips files inside nested git repositories such as submodules.
+It preserves the input file newline style, skips files inside nested git repositories such as submodules, and skips target nodes that contain multiline string literals or multiline interpolated strings.
 
 ## Quickstart
 

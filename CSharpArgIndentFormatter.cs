@@ -24,6 +24,7 @@ internal static class CSharpArgIndentFormatter
     replacements.AddRange(root.DescendantNodes()
       .OfType<ArgumentListSyntax>()
       .Where(argumentList => IsSingleMultilineLambdaArgument(argumentList, sourceText))
+      .Where(argumentList => !ContainsMultilineStringContent(argumentList, sourceText))
       .Select(argumentList => new TextReplacement(
         argumentList.Span,
         FormatSingleLambdaArgumentList(argumentList, sourceText, newLine)
@@ -33,6 +34,7 @@ internal static class CSharpArgIndentFormatter
       .OfType<ArgumentListSyntax>()
       .Where(argumentList => SpansMultipleLines(sourceText, argumentList.Span))
       .Where(argumentList => !IsSingleMultilineLambdaArgument(argumentList, sourceText))
+      .Where(argumentList => !ContainsMultilineStringContent(argumentList, sourceText))
       .Where(argumentList => StartsOnNextLine(sourceText, argumentList.OpenParenToken.Span.End, argumentList.CloseParenToken.SpanStart))
       .Select(argumentList => new TextReplacement(
         argumentList.Span,
@@ -49,6 +51,7 @@ internal static class CSharpArgIndentFormatter
       .OfType<BaseMethodDeclarationSyntax>()
       .Select(method => method.ParameterList)
       .Where(parameterList => SpansMultipleLines(sourceText, parameterList.Span))
+      .Where(parameterList => !ContainsMultilineStringContent(parameterList, sourceText))
       .Where(parameterList => StartsOnNextLine(sourceText, parameterList.OpenParenToken.Span.End, parameterList.CloseParenToken.SpanStart))
       .Select(parameterList => new TextReplacement(
         parameterList.Span,
@@ -180,6 +183,21 @@ internal static class CSharpArgIndentFormatter
   private static string DetectNewLine(string source)
   {
     return source.Contains("\r\n", StringComparison.Ordinal) ? "\r\n" : "\n";
+  }
+
+  private static bool ContainsMultilineStringContent(SyntaxNode node, SourceText sourceText)
+  {
+    return node.DescendantNodesAndSelf().Any(descendant =>
+      descendant switch
+      {
+        LiteralExpressionSyntax literal
+          when literal.IsKind(SyntaxKind.StringLiteralExpression) =>
+            SpansMultipleLines(sourceText, literal.Span),
+        InterpolatedStringExpressionSyntax interpolatedString =>
+          SpansMultipleLines(sourceText, interpolatedString.Span),
+        _ => false,
+      }
+    );
   }
 
   private static int GetLineIndent(SourceText sourceText, int position)
