@@ -10,10 +10,10 @@ internal static class CSharpArgIndentFormatter
 {
   public static string Format(string source)
   {
-    return ApplyListIndentFormatting(source);
+    return ApplyListIndentFormatting(source, DetectNewLine(source));
   }
 
-  private static string ApplyListIndentFormatting(string source)
+  private static string ApplyListIndentFormatting(string source, string newLine)
   {
     var syntaxTree = CSharpSyntaxTree.ParseText(source);
     var root = syntaxTree.GetRoot();
@@ -26,7 +26,7 @@ internal static class CSharpArgIndentFormatter
       .Where(argumentList => IsSingleMultilineLambdaArgument(argumentList, sourceText))
       .Select(argumentList => new TextReplacement(
         argumentList.Span,
-        FormatSingleLambdaArgumentList(argumentList, sourceText)
+        FormatSingleLambdaArgumentList(argumentList, sourceText, newLine)
       )));
 
     replacements.AddRange(root.DescendantNodes()
@@ -40,7 +40,8 @@ internal static class CSharpArgIndentFormatter
           sourceText,
           argumentList.OpenParenToken.Span.End,
           argumentList.CloseParenToken.SpanStart,
-          GetLineIndent(sourceText, argumentList.OpenParenToken.SpanStart)
+          GetLineIndent(sourceText, argumentList.OpenParenToken.SpanStart),
+          newLine
         )
       )));
 
@@ -55,48 +56,48 @@ internal static class CSharpArgIndentFormatter
           sourceText,
           parameterList.OpenParenToken.Span.End,
           parameterList.CloseParenToken.SpanStart,
-          GetLineIndent(sourceText, parameterList.OpenParenToken.SpanStart)
+          GetLineIndent(sourceText, parameterList.OpenParenToken.SpanStart),
+          newLine
         )
       )));
 
     return ApplyReplacements(source, replacements);
   }
 
-  private static string FormatSingleLambdaArgumentList(ArgumentListSyntax argumentList, SourceText sourceText)
+  private static string FormatSingleLambdaArgumentList(ArgumentListSyntax argumentList, SourceText sourceText, string newLine)
   {
     var lambda = (ParenthesizedLambdaExpressionSyntax)argumentList.Arguments[0].Expression;
     var block = lambda.Block!;
     var lineIndent = GetLineIndent(sourceText, argumentList.OpenParenToken.SpanStart);
-    var lambdaHeader = string.IsNullOrEmpty(lambda.AsyncKeyword.Text)
-      ? $"{lambda.ParameterList} =>"
-      : $"{lambda.AsyncKeyword.Text} {lambda.ParameterList} =>";
+    var lambdaHeader = sourceText.ToString(TextSpan.FromBounds(lambda.SpanStart, block.OpenBraceToken.SpanStart)).TrimEnd();
 
     var blockInnerText = sourceText.ToString(TextSpan.FromBounds(block.OpenBraceToken.Span.End, block.CloseBraceToken.SpanStart));
-    var formattedBlockInnerText = ReindentSnippet(blockInnerText, lineIndent + 4);
+    var formattedBlockInnerText = ReindentSnippet(blockInnerText, lineIndent + 4, newLine);
 
     if (string.IsNullOrEmpty(formattedBlockInnerText))
     {
-      return $"({lambdaHeader}\n{Indent(lineIndent + 2)}{{\n{Indent(lineIndent + 2)}}}\n{Indent(lineIndent)})";
+      return $"({lambdaHeader}{newLine}{Indent(lineIndent + 2)}{{{newLine}{Indent(lineIndent + 2)}}}{newLine}{Indent(lineIndent)})";
     }
 
-    return $"({lambdaHeader}\n{Indent(lineIndent + 2)}{{\n{formattedBlockInnerText}\n{Indent(lineIndent + 2)}}}\n{Indent(lineIndent)})";
+    return $"({lambdaHeader}{newLine}{Indent(lineIndent + 2)}{{{newLine}{formattedBlockInnerText}{newLine}{Indent(lineIndent + 2)}}}{newLine}{Indent(lineIndent)})";
   }
 
   private static string FormatParenthesizedContent(
     SourceText sourceText,
     int contentStart,
     int contentEnd,
-    int baseIndent
+    int baseIndent,
+    string newLine
   )
   {
     var innerText = sourceText.ToString(TextSpan.FromBounds(contentStart, contentEnd));
-    var formattedInnerText = ReindentSnippet(innerText, baseIndent + 2);
-    return $"(\n{formattedInnerText}\n{Indent(baseIndent)})";
+    var formattedInnerText = ReindentSnippet(innerText, baseIndent + 2, newLine);
+    return $"({newLine}{formattedInnerText}{newLine}{Indent(baseIndent)})";
   }
 
-  private static string ReindentSnippet(string rawText, int targetIndent)
+  private static string ReindentSnippet(string rawText, int targetIndent, string newLine)
   {
-    var normalized = rawText.Replace("\r\n", "\n");
+    var normalized = rawText.Replace("\r\n", "\n").Replace("\r", "\n");
     var lines = normalized.Split('\n').ToList();
 
     TrimOuterEmptyLines(lines);
@@ -112,7 +113,7 @@ internal static class CSharpArgIndentFormatter
       .Min();
 
     return string.Join(
-      "\n",
+      newLine,
       lines.Select(line =>
       {
         if (string.IsNullOrWhiteSpace(line))
@@ -174,6 +175,11 @@ internal static class CSharpArgIndentFormatter
     }
 
     return SpansMultipleLines(sourceText, lambda.Span);
+  }
+
+  private static string DetectNewLine(string source)
+  {
+    return source.Contains("\r\n", StringComparison.Ordinal) ? "\r\n" : "\n";
   }
 
   private static int GetLineIndent(SourceText sourceText, int position)
