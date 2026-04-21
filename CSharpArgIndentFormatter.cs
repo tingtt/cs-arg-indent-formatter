@@ -8,12 +8,16 @@ namespace CsArgIndentFormatter;
 
 internal static class CSharpArgIndentFormatter
 {
-  public static string Format(string source)
+  public static string Format(string source, EditorConfigIndentationOptions indentationOptions)
   {
-    return ApplyListIndentFormatting(source, DetectNewLine(source));
+    return ApplyListIndentFormatting(source, DetectNewLine(source), indentationOptions);
   }
 
-  private static string ApplyListIndentFormatting(string source, string newLine)
+  private static string ApplyListIndentFormatting(
+    string source,
+    string newLine,
+    EditorConfigIndentationOptions indentationOptions
+  )
   {
     var syntaxTree = CSharpSyntaxTree.ParseText(source);
     var root = syntaxTree.GetRoot();
@@ -27,7 +31,7 @@ internal static class CSharpArgIndentFormatter
       .Where(argumentList => !ContainsMultilineStringContent(argumentList, sourceText))
       .Select(argumentList => new TextReplacement(
         argumentList.Span,
-        FormatSingleLambdaArgumentList(argumentList, sourceText, newLine)
+        FormatSingleLambdaArgumentList(argumentList, sourceText, newLine, indentationOptions)
       )));
 
     replacements.AddRange(root.DescendantNodes()
@@ -43,62 +47,54 @@ internal static class CSharpArgIndentFormatter
           argumentList.OpenParenToken.Span.End,
           argumentList.CloseParenToken.SpanStart,
           GetLineIndent(sourceText, argumentList.OpenParenToken.SpanStart),
-          newLine
-        )
-      )));
-
-    replacements.AddRange(root.DescendantNodes()
-      .OfType<BaseMethodDeclarationSyntax>()
-      .Select(method => method.ParameterList)
-      .Where(parameterList => SpansMultipleLines(sourceText, parameterList.Span))
-      .Where(parameterList => !ContainsMultilineStringContent(parameterList, sourceText))
-      .Where(parameterList => StartsOnNextLine(sourceText, parameterList.OpenParenToken.Span.End, parameterList.CloseParenToken.SpanStart))
-      .Select(parameterList => new TextReplacement(
-        parameterList.Span,
-        FormatParenthesizedContent(
-          sourceText,
-          parameterList.OpenParenToken.Span.End,
-          parameterList.CloseParenToken.SpanStart,
-          GetLineIndent(sourceText, parameterList.OpenParenToken.SpanStart),
-          newLine
+          newLine,
+          indentationOptions
         )
       )));
 
     return ApplyReplacements(source, replacements);
   }
 
-  private static string FormatSingleLambdaArgumentList(ArgumentListSyntax argumentList, SourceText sourceText, string newLine)
+  private static string FormatSingleLambdaArgumentList(
+    ArgumentListSyntax argumentList,
+    SourceText sourceText,
+    string newLine,
+    EditorConfigIndentationOptions indentationOptions
+  )
   {
     var lambda = (ParenthesizedLambdaExpressionSyntax)argumentList.Arguments[0].Expression;
     var block = lambda.Block!;
     var lineIndent = GetLineIndent(sourceText, argumentList.OpenParenToken.SpanStart);
+    var braceIndent = lineIndent + indentationOptions.IndentUnit;
+    var bodyIndent = braceIndent + indentationOptions.IndentUnit;
     var lambdaHeader = sourceText.ToString(TextSpan.FromBounds(lambda.SpanStart, block.OpenBraceToken.SpanStart)).TrimEnd();
 
     var blockInnerText = sourceText.ToString(TextSpan.FromBounds(block.OpenBraceToken.Span.End, block.CloseBraceToken.SpanStart));
-    var formattedBlockInnerText = ReindentSnippet(blockInnerText, lineIndent + 4, newLine);
+    var formattedBlockInnerText = ReindentSnippet(blockInnerText, bodyIndent, newLine);
 
     if (string.IsNullOrEmpty(formattedBlockInnerText))
     {
-      return $"({lambdaHeader}{newLine}{Indent(lineIndent + 2)}{{{newLine}{Indent(lineIndent + 2)}}}{newLine}{Indent(lineIndent)})";
+      return $"({lambdaHeader}{newLine}{braceIndent}{{{newLine}{braceIndent}}}{newLine}{lineIndent})";
     }
 
-    return $"({lambdaHeader}{newLine}{Indent(lineIndent + 2)}{{{newLine}{formattedBlockInnerText}{newLine}{Indent(lineIndent + 2)}}}{newLine}{Indent(lineIndent)})";
+    return $"({lambdaHeader}{newLine}{braceIndent}{{{newLine}{formattedBlockInnerText}{newLine}{braceIndent}}}{newLine}{lineIndent})";
   }
 
   private static string FormatParenthesizedContent(
     SourceText sourceText,
     int contentStart,
     int contentEnd,
-    int baseIndent,
-    string newLine
+    string baseIndent,
+    string newLine,
+    EditorConfigIndentationOptions indentationOptions
   )
   {
     var innerText = sourceText.ToString(TextSpan.FromBounds(contentStart, contentEnd));
-    var formattedInnerText = ReindentSnippet(innerText, baseIndent + 2, newLine);
-    return $"({newLine}{formattedInnerText}{newLine}{Indent(baseIndent)})";
+    var formattedInnerText = ReindentSnippet(innerText, baseIndent + indentationOptions.IndentUnit, newLine);
+    return $"({newLine}{formattedInnerText}{newLine}{baseIndent})";
   }
 
-  private static string ReindentSnippet(string rawText, int targetIndent, string newLine)
+  private static string ReindentSnippet(string rawText, string targetIndent, string newLine)
   {
     var normalized = rawText.Replace("\r\n", "\n").Replace("\r", "\n");
     var lines = normalized.Split('\n').ToList();
@@ -125,7 +121,7 @@ internal static class CSharpArgIndentFormatter
         }
 
         var trimmedLine = line.Length >= minimumIndent ? line[minimumIndent..] : line.TrimStart();
-        return $"{Indent(targetIndent)}{trimmedLine}";
+        return $"{targetIndent}{trimmedLine}";
       })
     );
   }
@@ -200,10 +196,11 @@ internal static class CSharpArgIndentFormatter
     );
   }
 
-  private static int GetLineIndent(SourceText sourceText, int position)
+  private static string GetLineIndent(SourceText sourceText, int position)
   {
     var line = sourceText.Lines.GetLineFromPosition(position);
-    return GetLeadingWhitespaceLength(line.ToString());
+    var lineText = line.ToString();
+    return lineText[..GetLeadingWhitespaceLength(lineText)];
   }
 
   private static int GetLeadingWhitespaceLength(string line)
@@ -250,11 +247,5 @@ internal static class CSharpArgIndentFormatter
 
     return builder.ToString();
   }
-
-  private static string Indent(int size)
-  {
-    return new string(' ', size);
-  }
-
   private sealed record TextReplacement(TextSpan Span, string Content);
 }

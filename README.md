@@ -13,20 +13,20 @@ The first version targets these multiline layouts:
 - indentation for argument lists that start on the next line after `(`
 - block-body parenthesized lambdas used as invocation arguments
 
-It preserves the input file newline style, skips files inside nested git repositories such as submodules, and skips target nodes that contain multiline string literals or multiline interpolated strings.
+It preserves the input file newline style, reads `indent_style` and `indent_size` from the `.editorconfig` in the current working directory, skips files inside nested git repositories such as submodules, and skips target nodes that contain multiline string literals or multiline interpolated strings.
 
 ## Quickstart
 
 ```bash
 cd <your-project>
-git clone https://github.com/tingtt/cs-arg-indent-formatter.git tools/cs-arg-indent-formatter
-dotnet run --project tools/cs-arg-indent-formatter -- <path>
+git clone https://github.com/tingtt/cs-arg-indent-formatter.git Tools/cs-arg-indent-formatter
+dotnet run --project Tools/cs-arg-indent-formatter -- <path>
 ```
 
 Check mode:
 
 ```bash
-dotnet run --project tools/cs-arg-indent-formatter -- --check <path>
+dotnet run --project Tools/cs-arg-indent-formatter -- --check <path>
 ```
 
 ## Examples
@@ -75,7 +75,7 @@ button.OnClick.AddListener(() =>
 The same indentation rule also applies when a constructor call appears as an argument:
 
 ```bash
-dotnet run --project . -- src
+dotnet run --project Tools/cs-arg-indent-formatter -- src
 ```
 
 ```csharp

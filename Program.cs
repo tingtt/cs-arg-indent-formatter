@@ -1,6 +1,7 @@
 using CsArgIndentFormatter;
 
 var options = CommandLineOptions.Parse(args);
+var indentationOptions = EditorConfigIndentationOptions.LoadFromCurrentDirectory();
 
 if (options.ShowHelp)
 {
@@ -19,7 +20,7 @@ var changedFiles = new List<string>();
 foreach (var filePath in CommandLineOptions.EnumerateTargetFiles(options.Paths))
 {
   var source = File.ReadAllText(filePath);
-  var formatted = CSharpArgIndentFormatter.Format(source);
+  var formatted = CSharpArgIndentFormatter.Format(source, indentationOptions);
   if (formatted == source)
   {
     continue;
